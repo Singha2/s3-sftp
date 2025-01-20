@@ -4,6 +4,7 @@ import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
 import java.io.IOException;
@@ -13,7 +14,10 @@ import java.util.Collections;
 public class S3SftpServer {
     private final SshServer sshd;
     private final String bucketName;
-    private S3Client s3Client;
+   // private static volatile S3Client globalS3Client;
+    private static final Object s3Lock = new Object();
+    private final S3FileSystemFactory fsFactory;
+    private final S3FileSystem fs;
 
 
     public S3SftpServer(int port, String bucketName) throws IOException {
@@ -22,38 +26,31 @@ public class S3SftpServer {
         this.sshd.setPort(port);
         this.sshd.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(Path.of("hostkey.ser")));
 
+        CustomSftpSubsystemFactory sftpFactory = new CustomSftpSubsystemFactory();
 
+        System.out.println("Initializing SFTP Server...");
 
         // Set specific username and password
-        /*this.sshd.setPasswordAuthenticator((username, password, session) ->
-                "admin".equals(username) && "password@123".equals(password));*/
+        this.sshd.setPasswordAuthenticator((username, password, session) ->
+                "admin".equals(username) && "password@123".equals(password));
 
         // Configure SFTP subsystem with S3 integration
-        S3FileSystemFactory fsFactory = new S3FileSystemFactory(bucketName);
+        fsFactory = new S3FileSystemFactory(bucketName);
 
         this.sshd.setFileSystemFactory(fsFactory);
-        SftpSubsystemFactory sftpFactory = new SftpSubsystemFactory();
+        //SftpSubsystemFactory sftpFactory = new SftpSubsystemFactory();
         sftpFactory.addSftpEventListener(new S3SftpEventListener());
         sftpFactory.setFileSystemAccessor(new S3SftpFileSystemAccessor(fsFactory.getFileSystem()));
 
         this.sshd.setSubsystemFactories(Collections.singletonList(sftpFactory));
         //fsFactory.addUserHomeDirectory("admin", "/home/admin");
-        S3FileSystem fs = fsFactory.getFileSystem();
+        this.fs = fsFactory.getFileSystem();
 
         S3FileSystemProvider provider = (S3FileSystemProvider) fsFactory.getFileSystem().provider();
         provider.listS3Contents();
 
-        try {
-            s3Client.putObject(req -> req
-                            .bucket(bucketName)
-                            .key("/")
-                            .build(),
-                    RequestBody.empty());
-        } catch (Exception e) {
-            // Ignore if exists
-        }
-
     }
+
 
     public void start() throws Exception {
         sshd.start();
@@ -64,9 +61,27 @@ public class S3SftpServer {
         sshd.stop();
     }
 
+    public void shutdown() {
+        System.out.println("Shutting down S3SftpServer completely...");
+        try {
+            stop();
+        } catch (Exception e) {
+            System.err.println("Error stopping server: " + e.getMessage());
+        } finally {
+            this.fsFactory.shutdown();
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         String bucketName = "customsftpfolderpath";
         S3SftpServer server = new S3SftpServer(2222, bucketName);
+        server.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutdown hook triggered");
+            server.shutdown();
+        }));
+
         server.start();
 
         // Keep the server running

@@ -31,8 +31,16 @@ public class S3FileSystem extends FileSystem {
 
     @Override
     public void close() {
-        s3Client.close();
+        System.out.println("S3FileSystem.close() called from: " +
+                Thread.currentThread().getStackTrace()[2].getClassName() + "." +
+                Thread.currentThread().getStackTrace()[2].getMethodName() +
+                "() line: " + Thread.currentThread().getStackTrace()[2].getLineNumber());
+
+        // Do not close the S3Client here as it's managed by the factory
+        System.out.println("S3FileSystem.close() - NOT closing S3Client");
     }
+
+
 
     @Override
     public boolean isOpen() {
