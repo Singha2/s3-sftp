@@ -25,8 +25,8 @@ public class S3SftpServer {
 
 
         // Set specific username and password
-        this.sshd.setPasswordAuthenticator((username, password, session) ->
-                "admin".equals(username) && "password@123".equals(password));
+        /*this.sshd.setPasswordAuthenticator((username, password, session) ->
+                "admin".equals(username) && "password@123".equals(password));*/
 
         // Configure SFTP subsystem with S3 integration
         S3FileSystemFactory fsFactory = new S3FileSystemFactory(bucketName);
